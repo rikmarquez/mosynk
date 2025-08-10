@@ -1,0 +1,189 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  name              String?
+  password          String?  // For credentials provider
+  emailVerified     DateTime?
+  image             String?
+  subscriptionTier  String   @default("free") // free, premium
+  role              String   @default("user") // user, editor, admin
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // NextAuth relations
+  accounts          Account[]
+  sessions          Session[]
+  
+  // App relations
+  subscription      Subscription?
+  progress          UserProgress[]
+  favorites         UserFavorite[]
+  
+  // Content creation relations
+  createdModels     MentalModel[] @relation("ModelCreator")
+  editedModels      MentalModel[] @relation("ModelEditor")
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Subscription {
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  stripeSubscriptionId String?   @unique
+  stripeCustomerId     String?   @unique
+  stripePriceId        String?
+  status               String    // active, canceled, incomplete, etc.
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model Category {
+  id          String @id @default(cuid())
+  name        String
+  slug        String @unique
+  description String?
+  color       String @default("#3B82F6") // Hex color for UI
+  icon        String @default("brain") // Icon name (lucide-react)
+  order       Int    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  models MentalModel[]
+
+  @@map("categories")
+}
+
+model MentalModel {
+  id                String   @id @default(cuid())
+  title             String
+  slug              String   @unique
+  briefSummary      String   @db.Text // Descripción/intro corta
+  desktopImageUrl   String?  // Imagen de portada desktop
+  mobileImageUrl    String?  // Imagen de portada mobile  
+  audioUrl          String?  // Audio general del modelo (opcional)
+  durationMinutes   Int?     // Tiempo estimado de lectura/escucha
+  difficultyLevel   Int      @default(1) // 1-5 scale
+  popularityScore   Int      @default(0) // Para algoritmo de recomendación
+  isPublished       Boolean  @default(false)
+  categoryId        String
+  
+  // Content creation tracking
+  createdById       String?
+  lastEditedById    String?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  category          Category @relation(fields: [categoryId], references: [id])
+  sections          Section[] // ← Secciones dinámicas del contenido
+  userProgress      UserProgress[]
+  userFavorites     UserFavorite[]
+  
+  // Content creation relations
+  createdBy         User? @relation("ModelCreator", fields: [createdById], references: [id])
+  lastEditedBy      User? @relation("ModelEditor", fields: [lastEditedById], references: [id])
+
+  @@map("mental_models")
+}
+
+model Section {
+  id              String   @id @default(cuid())
+  mentalModelId   String
+  title           String   // "Teoría", "Ejemplo: Startup", "Aplicación", etc.
+  type            String   // "theory", "example", "intro", "conclusion", "custom"
+  content         String?  @db.Text // Contenido de texto (opcional)
+  imageUrl        String?  // Imagen específica de esta sección (opcional)
+  audioUrl        String?  // Audio específico de esta sección (opcional)
+  orderPosition   Int      // Para ordenar: 1, 2, 3, etc.
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  mentalModel     MentalModel @relation(fields: [mentalModelId], references: [id], onDelete: Cascade)
+
+  @@map("sections")
+}
+
+model UserProgress {
+  id            String    @id @default(cuid())
+  userId        String
+  mentalModelId String
+  completedAt   DateTime?
+  rating        Int?      // 1-5 stars
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mentalModel MentalModel @relation(fields: [mentalModelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, mentalModelId])
+  @@map("user_progress")
+}
+
+model UserFavorite {
+  id            String   @id @default(cuid())
+  userId        String
+  mentalModelId String
+  createdAt     DateTime @default(now())
+
+  // Relations
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mentalModel MentalModel @relation(fields: [mentalModelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, mentalModelId])
+  @@map("user_favorites")
+}
